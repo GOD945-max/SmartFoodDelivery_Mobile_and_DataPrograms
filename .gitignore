@@ -1,0 +1,31 @@
+# Word / Office temporary files
+~$*
+*.tmp
+
+# Node.js / Backend API Bridge
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+.env.*.local
+
+# Android Studio / Gradle
+*.iml
+.gradle/
+**/build/
+local.properties
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# OS generated files
+Thumbs.db
+Desktop.ini
