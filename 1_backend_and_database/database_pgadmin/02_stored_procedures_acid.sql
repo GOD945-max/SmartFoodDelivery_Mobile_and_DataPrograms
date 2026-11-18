@@ -132,14 +132,29 @@ BEGIN
         RAISE EXCEPTION 'Quán ăn hiện đang đóng cửa hoặc tạm ngưng nhận đơn!';
     END IF;
 
+    -- Kiểm tra từng phần tử trong giỏ hàng đều có item_id hợp lệ và quantity > 0
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(p_items) AS elem
+        WHERE (elem->>'item_id') IS NULL
+           OR COALESCE((elem->>'quantity')::INT, 0) <= 0
+    ) THEN
+        RAISE EXCEPTION 'Mọi món ăn trong giỏ hàng đều phải có item_id hợp lệ và số lượng (quantity) lớn hơn 0!';
+    END IF;
+
     -- -------------------------------------------------------------------------
     -- BƯỚC 2: KHÓA DÒNG MÓN ĂN (SELECT ... FOR UPDATE), KIỂM TRA & TRỪ TỒN KHO
     -- Lưu ý: Sắp xếp theo item_id ASC và gom nhóm số lượng nếu cùng item_id để chống Deadlock
+    -- Hỗ trợ thêm trường tùy chọn extra_price (phụ phí Size/Topping từ Mobile App nếu có)
     -- -------------------------------------------------------------------------
     FOR v_item_record IN
         SELECT
             (elem->>'item_id')::INT AS item_id,
-            SUM((elem->>'quantity')::INT) AS total_qty
+            SUM((elem->>'quantity')::INT) AS total_qty,
+            SUM(
+                ((elem->>'quantity')::INT) *
+                GREATEST(0::NUMERIC(12,2), COALESCE((elem->>'extra_price')::NUMERIC(12,2), 0::NUMERIC(12,2)))
+            ) AS total_extra_amount
         FROM jsonb_array_elements(p_items) AS elem
         GROUP BY (elem->>'item_id')::INT
         ORDER BY (elem->>'item_id')::INT ASC
@@ -182,20 +197,21 @@ BEGIN
             END
         WHERE id = v_item_id;
 
-        -- Cộng dồn tổng tiền món ăn (Subtotal)
-        v_subtotal := v_subtotal + (v_price * v_quantity);
+        -- Cộng dồn tổng tiền món ăn (Subtotal = Giá gốc * Số lượng + Phụ phí Size/Topping nếu có)
+        v_subtotal := v_subtotal + (v_price * v_quantity) + COALESCE(v_item_record.total_extra_amount, 0);
     END LOOP;
 
     -- -------------------------------------------------------------------------
     -- BƯỚC 3: TÍNH KHOẢNG CÁCH GPS HAVERSINE & PHÍ GIAO HÀNG (SHIPPING FEE)
-    -- Quy tắc: <= 2km phí 15.000đ; mỗi km tiếp theo (làm tròn lên) cộng thêm 5.000đ
+    -- Quy tắc: <= 2km phí cơ sở 15.000đ; mỗi km tiếp theo (làm tròn lên) cộng thêm 3.000đ
+    -- đối với quán Đối tác Freeship (is_freeship = TRUE) hoặc 5.000đ với quán thường.
     -- -------------------------------------------------------------------------
     v_distance := fn_calculate_distance(v_rest_lat, v_rest_lng, p_delivery_lat, p_delivery_lng);
 
     IF v_distance <= 2.0 THEN
         v_shipping_fee := 15000;
     ELSE
-        v_shipping_fee := 15000 + CEIL(v_distance - 2.0) * 5000;
+        v_shipping_fee := 15000 + CEIL(v_distance - 2.0) * (CASE WHEN v_is_freeship THEN 3000 ELSE 5000 END);
     END IF;
 
     -- -------------------------------------------------------------------------
@@ -301,6 +317,7 @@ BEGIN
         SELECT
             (elem->>'item_id')::INT AS item_id,
             (elem->>'quantity')::INT AS quantity,
+            GREATEST(0::NUMERIC(12,2), COALESCE((elem->>'extra_price')::NUMERIC(12,2), 0::NUMERIC(12,2))) AS extra_price,
             COALESCE(elem->'selected_options', '{}'::jsonb) AS selected_options,
             elem->>'kitchen_note' AS kitchen_note,
             elem->>'group_member_name' AS group_member_name
@@ -309,6 +326,8 @@ BEGIN
         SELECT price INTO v_price
         FROM menu_items
         WHERE id = v_item_record.item_id;
+
+        v_price := v_price + COALESCE(v_item_record.extra_price, 0);
 
         INSERT INTO order_details (
             order_id,
@@ -425,6 +444,11 @@ BEGIN
     UPDATE orders
     SET order_status = 'CANCELLED'
     WHERE id = p_order_id;
+
+    -- Thu hồi lại điểm thưởng tích lũy đã cộng khi tạo đơn (đảm bảo không âm)
+    UPDATE users
+    SET loyalty_points = GREATEST(0, loyalty_points - FLOOR(v_order.total_amount / 10000.0)::INT)
+    WHERE id = v_order.customer_id;
 
     -- Ghi vết vào bảng audit_logs (kiểm tra IF NOT EXISTS để không trùng nếu Trigger TV2 đã tự ghi)
     IF NOT EXISTS (
