@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartFood Delivery</string>
+    <string name="skeleton_title">SmartFood Delivery • FoodFlow</string>
+    <string name="skeleton_subtitle">Bộ khung Android chuẩn (com.group.smartfood • compileSdk 35) đã sẵn sàng cho TV4 &amp; TV5 ghép code.</string>
+    <string name="btn_check_location">Kiểm tra GPS An toàn (VN Fallback)</string>
+    <string name="btn_test_vietqr">Xem trước URL VietQR</string>
+</resources>

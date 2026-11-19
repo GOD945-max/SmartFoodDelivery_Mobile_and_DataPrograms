@@ -67,6 +67,12 @@ COMMENT ON FUNCTION fn_calculate_distance IS 'Hàm tính khoảng cách GPS (km)
 --   - Kiểm tra, khóa dòng và cộng lượt dùng Voucher (FOR UPDATE)
 --   - Tự động ROLLBACK toàn bộ giao dịch nếu bất kỳ món nào hết hàng hoặc Voucher không hợp lệ
 -- =============================================================================
+-- Xóa chữ ký cũ (13 tham số) nếu tồn tại để tránh lỗi overload trùng tên khi nâng cấp lên 14 tham số
+DROP PROCEDURE IF EXISTS sp_create_order(
+    INT, INT, VARCHAR, TEXT, DOUBLE PRECISION, DOUBLE PRECISION, JSONB,
+    INT, NUMERIC, VARCHAR, VARCHAR, BOOLEAN, BOOLEAN
+);
+
 CREATE OR REPLACE PROCEDURE sp_create_order(
     IN p_customer_id INT,
     IN p_restaurant_id INT,
@@ -80,7 +86,8 @@ CREATE OR REPLACE PROCEDURE sp_create_order(
     INOUT o_qr_verify_token VARCHAR DEFAULT NULL,
     IN p_payment_method VARCHAR DEFAULT 'COD',
     IN p_take_utensils BOOLEAN DEFAULT FALSE,
-    IN p_is_group_order BOOLEAN DEFAULT FALSE
+    IN p_is_group_order BOOLEAN DEFAULT FALSE,
+    IN p_group_bill_split JSONB DEFAULT NULL
 )
 LANGUAGE plpgsql
 AS $$
@@ -288,7 +295,8 @@ BEGIN
         vat_amount,
         payment_method,
         take_utensils,
-        is_group_order
+        is_group_order,
+        group_bill_split
     ) VALUES (
         p_customer_id,
         p_restaurant_id,
@@ -306,7 +314,8 @@ BEGIN
         v_vat_amount,
         COALESCE(p_payment_method, 'COD'),
         COALESCE(p_take_utensils, FALSE),
-        COALESCE(p_is_group_order, FALSE)
+        COALESCE(p_is_group_order, FALSE),
+        p_group_bill_split
     )
     RETURNING id INTO o_order_id;
 

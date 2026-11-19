@@ -124,6 +124,7 @@ async function testConnection() {
  * @param {string} [orderPayload.payment_method='COD']
  * @param {boolean} [orderPayload.take_utensils=false]
  * @param {boolean} [orderPayload.is_group_order=false]
+ * @param {Object|string|null} [orderPayload.group_bill_split=null] - Bảng chia tiền Đặt nhóm (SCR-14)
  */
 async function createOrderTx(orderPayload) {
     const {
@@ -137,6 +138,7 @@ async function createOrderTx(orderPayload) {
         payment_method = 'COD',
         take_utensils = false,
         is_group_order = false,
+        group_bill_split = null,
     } = orderPayload;
 
     const sql = `
@@ -153,9 +155,17 @@ async function createOrderTx(orderPayload) {
             NULL,
             $8::VARCHAR,
             $9::BOOLEAN,
-            $10::BOOLEAN
+            $10::BOOLEAN,
+            $11::JSONB
         );
     `;
+
+    const serializedGroupSplit =
+        group_bill_split === null || group_bill_split === undefined
+            ? null
+            : typeof group_bill_split === 'string'
+                ? group_bill_split
+                : JSON.stringify(group_bill_split);
 
     const params = [
         customer_id,
@@ -168,6 +178,7 @@ async function createOrderTx(orderPayload) {
         payment_method,
         take_utensils,
         is_group_order,
+        serializedGroupSplit,
     ];
 
     const result = await pool.query(sql, params);
