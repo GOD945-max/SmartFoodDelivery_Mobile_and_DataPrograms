@@ -104,13 +104,22 @@ function writeFields(body, rules, required) {
 
 function authResponse(res, status, user) {
     res.set('Cache-Control', 'no-store');
-    return res.status(status).json({
-        token: signAccessToken(user),
-        user_id: user.id,
+    const profile = {
+        id: user.id,
         username: user.username,
         full_name: user.full_name,
+        phone: user.phone,
         role: user.role,
         restaurant_id: user.restaurant_id,
+        loyalty_points: user.loyalty_points,
+        member_tier: user.member_tier,
+    };
+    return res.status(status).json({
+        success: true,
+        token: signAccessToken(user),
+        user_id: user.id,
+        ...profile,
+        user: profile,
     });
 }
 
@@ -119,7 +128,7 @@ router.post('/auth/login', loginIpLimit, requireJson, authJson, loginAccountLimi
         ['username', 'password']);
     const { username, password } = req.body;
     const { rows: [user] } = await query(
-        "SELECT u.id, u.username, u.password_hash, u.full_name, u.role, " +
+        "SELECT u.id, u.username, u.password_hash, u.full_name, u.role, u.phone, u.loyalty_points, u.member_tier, " +
         "(SELECT MIN(r.id) FROM restaurants r WHERE r.owner_id = u.id AND u.role = 'RESTAURANT') AS restaurant_id " +
         "FROM users u WHERE u.username = $1",
         [username]
@@ -130,9 +139,12 @@ router.post('/auth/login', loginIpLimit, requireJson, authJson, loginAccountLimi
 }));
 
 router.post('/auth/register', registerIpLimit, requireJson, authJson, route(async (req, res) => {
+    if (req.body && Object.hasOwn(req.body, 'password') && !validPassword(req.body.password, 8)) {
+        throw new ApiError(400, 'Mật khẩu cần ít nhất 8 ký tự, tối đa 72 byte và không chứa ký tự NUL');
+    }
     validatedFields(req.body, {
         username: validUsername,
-        password: (v) => validPassword(v, 15),
+        password: (v) => validPassword(v, 8),
         full_name: nonEmpty(100),
         phone: (v) => typeof v === 'string' && /^\+?\d{8,15}$/.test(v),
     }, ['username', 'password', 'full_name']);
@@ -142,7 +154,7 @@ router.post('/auth/register', registerIpLimit, requireJson, authJson, route(asyn
     const { rows: [user] } = await query(
         "INSERT INTO users (username, password_hash, full_name, phone, role) " +
         "VALUES ($1, $2, $3, $4, 'CUSTOMER') ON CONFLICT DO NOTHING " +
-        "RETURNING id, username, full_name, role, NULL::int AS restaurant_id",
+        "RETURNING id, username, full_name, phone, loyalty_points, member_tier, role, NULL::int AS restaurant_id",
         [username, passwordHash, fullName.trim(), phone]
     );
     if (!user) throw new ApiError(409, 'Không thể đăng ký với thông tin đã cung cấp');
@@ -150,7 +162,10 @@ router.post('/auth/register', registerIpLimit, requireJson, authJson, route(asyn
 }));
 
 router.get('/restaurants', route(async (req, res) => {
-    const { lat, lng } = req.query;
+    const { lat, lng, search } = req.query;
+    if (search !== undefined && (typeof search !== 'string' || search.length > 150 || search.includes('\0'))) {
+        throw new ApiError(400, 'Từ khóa tìm kiếm không hợp lệ');
+    }
     let coordinates = [null, null];
     if (lat !== undefined || lng !== undefined) {
         const validCoordinate = (v, max) => typeof v === 'string' &&
@@ -164,8 +179,25 @@ router.get('/restaurants', route(async (req, res) => {
         'SELECT id, name, address, latitude, longitude, open_time, close_time, brand_name, ' +
         'cover_image_url, rating::float AS rating, is_freeship, prep_time_minutes, ' +
         'CASE WHEN $1::float IS NOT NULL THEN fn_calculate_distance($1, $2, latitude, longitude) END AS distance_km ' +
-        'FROM restaurants WHERE is_active IS TRUE ORDER BY distance_km NULLS LAST, id',
-        coordinates
+        "FROM restaurants WHERE is_active IS TRUE AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%') " +
+        'ORDER BY distance_km NULLS LAST, id',
+        [...coordinates, search?.trim() || null]
+    );
+    return res.json(rows);
+}));
+
+// Gợi ý của TV1 tính theo số tiền dự kiến; server xác thực lại khi đặt đơn.
+router.get('/vouchers/suggest', route(async (req, res) => {
+    const { restaurant_id, subtotal, shipping_fee } = req.query;
+    const decimal = (v) => typeof v === 'string' && /^\d+(\.\d{1,2})?$/.test(v) &&
+        Number.isFinite(Number(v)) && Number(v) <= 9999999999.99;
+    const restaurantId = requireId(restaurant_id);
+    if (!decimal(subtotal) || (shipping_fee !== undefined && !decimal(shipping_fee))) {
+        throw new ApiError(400, 'subtotal và shipping_fee phải là số không âm hợp lệ');
+    }
+    const { rows } = await query(
+        'SELECT * FROM fn_suggest_best_voucher($1::int, $2::numeric, $3::numeric)',
+        [restaurantId, subtotal, shipping_fee ?? '15000']
     );
     return res.json(rows);
 }));

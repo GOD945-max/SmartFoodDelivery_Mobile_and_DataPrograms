@@ -63,3 +63,16 @@ BEGIN
     ) INTO report;
 END;
 $$;
+
+-- Cách gọi rút gọn cho 7 ngày gần nhất; giữ nguyên chữ ký 4 tham số của TV3.
+-- CALL sp_get_restaurant_revenue_report(1, NULL);
+CREATE OR REPLACE PROCEDURE sp_get_restaurant_revenue_report(
+    IN p_restaurant_id INT,
+    OUT report JSONB
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    CALL sp_get_restaurant_revenue_report(p_restaurant_id, CURRENT_DATE - 6, CURRENT_DATE, report);
+END;
+$$;

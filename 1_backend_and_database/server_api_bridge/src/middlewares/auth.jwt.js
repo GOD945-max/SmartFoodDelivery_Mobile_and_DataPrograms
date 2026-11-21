@@ -58,4 +58,5 @@ function authorizeRoles(...allowedRoles) {
     };
 }
 
-module.exports = { authenticateToken, authorizeRoles, signAccessToken, jwtSecret };
+// Giữ tên cũ và cung cấp tên tương thích với phân công TV3.
+module.exports = { authenticateToken, verifyToken: authenticateToken, authorizeRoles, signAccessToken, jwtSecret };
