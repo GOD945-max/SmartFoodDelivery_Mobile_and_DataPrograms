@@ -11,8 +11,23 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    INSERT INTO audit_logs (order_id, old_status, new_status)
-    VALUES (NEW.id, OLD.order_status, NEW.order_status);
+    -- Chỉ so với bản ghi gần nhất: không xóa các lần chuyển trạng thái
+    -- giống nhau nhưng xảy ra lại sau một trạng thái trung gian.
+    IF NOT EXISTS (
+        SELECT 1
+        FROM (
+            SELECT old_status, new_status
+            FROM audit_logs
+            WHERE order_id = NEW.id
+            ORDER BY id DESC
+            LIMIT 1
+        ) AS latest
+        WHERE latest.old_status IS NOT DISTINCT FROM OLD.order_status
+          AND latest.new_status IS NOT DISTINCT FROM NEW.order_status
+    ) THEN
+        INSERT INTO audit_logs (order_id, old_status, new_status)
+        VALUES (NEW.id, OLD.order_status, NEW.order_status);
+    END IF;
     RETURN NEW;
 END;
 $$;
