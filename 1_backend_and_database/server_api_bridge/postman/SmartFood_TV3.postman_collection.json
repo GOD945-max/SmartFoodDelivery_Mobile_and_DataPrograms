@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SmartFood - TV3 (Order, Socket & Report API)",
-    "description": "Chạy theo thứ tự từ folder 0 đến 5 bằng Collection Runner. Folder 0 đăng nhập và tự lưu token; folder 1 tạo đơn và lưu order_id, qr_token; các folder sau dùng lại các biến đó.\nTrước khi chạy: sửa baseUrl, tài khoản test và các biến id cho khớp dữ liệu seed của nhóm. Socket.io không test được bằng Postman collection này, dùng Postman Socket.IO request hoặc 2 máy Android.",
+    "description": "Chạy theo thứ tự từ folder 0 đến 5 bằng Collection Runner. Folder 0 đăng nhập và tự lưu token; folder 1 tạo đơn và lưu order_id, qr_token; các folder sau dùng lại các biến đó.\nTrước khi chạy: sửa baseUrl, tài khoản test và các biến id cho khớp dữ liệu seed của nhóm. Socket.io không test được bằng Postman collection này, dùng Postman Socket.IO request hoặc 2 máy Android.\nFolder 6 chạy cuối. Đặt nhóm (create_group_room, join_group_room, group_add_item) và GPS (update_shipper_location) là sự kiện Socket.io, không test bằng request HTTP; dùng Postman Socket.IO request hoặc 2 máy Android.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -86,6 +86,7 @@
                   "pm.test(\"Có JWT token\", function () { pm.expect(t).to.be.a(\"string\"); });",
                   "if (t) { pm.collectionVariables.set(\"customer_token\", t);",
                   "  try { const p = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));",
+                  "    if (p.sub) pm.collectionVariables.set(\"customer_id\", Number(p.sub));",
                   "  } catch (e) {} }"
                 ]
               }
@@ -426,7 +427,7 @@
           ]
         },
         {
-          "name": "Món bị trùng trong giỏ -> 400",
+          "name": "Đặt nhóm: trùng item_id + extra_price + group_member_name -> 201",
           "request": {
             "method": "POST",
             "header": [
@@ -457,13 +458,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"restaurant_id\": {{restaurant_id}},\n  \"delivery_address\": \"123 Nguyễn Thị Minh Khai, Quận 1\",\n  \"delivery_lat\": 10.7756,\n  \"delivery_lng\": 106.6924,\n  \"items\": [\n    {\n      \"item_id\": {{item_id}},\n      \"quantity\": 1\n    },\n    {\n      \"item_id\": {{item_id}},\n      \"quantity\": 1\n    }\n  ]\n}",
+              "raw": "{\n  \"restaurant_id\": {{restaurant_id}},\n  \"delivery_address\": \"123 Nguyễn Thị Minh Khai, Quận 1\",\n  \"delivery_lat\": 10.7756,\n  \"delivery_lng\": 106.6924,\n  \"payment_method\": \"COD\",\n  \"is_group_order\": true,\n  \"group_bill_split\": {\n    \"Trung\": 59000,\n    \"An\": 59000\n  },\n  \"items\": [\n    {\n      \"item_id\": {{item_id}},\n      \"quantity\": 1,\n      \"extra_price\": 10000,\n      \"group_member_name\": \"Trung\"\n    },\n    {\n      \"item_id\": {{item_id}},\n      \"quantity\": 1,\n      \"extra_price\": 0,\n      \"group_member_name\": \"An\",\n      \"kitchen_note\": \"Ít đá\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Tạo thêm 1 đơn thật (PENDING). Kiểm tra trong pgAdmin: tiền món đầu cộng đúng extra_price."
           },
           "event": [
             {
@@ -471,8 +473,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 400\", function () { pm.response.to.have.status(400); });",
-                  "pm.test(\"Có message\", function () { pm.expect(pm.response.json()).to.have.property(\"message\"); });"
+                  "pm.test(\"Status 201\", function () { pm.response.to.have.status(201); });",
+                  "const d = pm.response.json().data;",
+                  "pm.test(\"Giữ đủ 2 dòng món\", function () { pm.expect(d.items.length).to.eql(2); });",
+                  "pm.test(\"Lưu group_member_name\", function () { pm.expect(d.items.map(i => i.group_member_name)).to.include.members([\"Trung\",\"An\"]); });",
+                  "pm.test(\"Có audit_logs\", function () { pm.expect(d.audit_logs).to.be.an(\"array\"); });"
                 ]
               }
             }
@@ -1275,6 +1280,61 @@
               }
             }
           ]
+        },
+        {
+          "name": "Khách gửi PATCH CANCELLED đơn của mình -> 200/409",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{cancel_order_id}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{cancel_order_id}}",
+                "status"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customer_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_status\": \"CANCELLED\",\n  \"reason\": \"Khách hủy qua PATCH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Chạy sau folder 4 thì đơn đã CANCELLED nên trả 409; chạy riêng với đơn PENDING thì trả 200."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 (hủy được) hoặc 409 (đã hủy ở bước trước)\", function () { pm.expect([200,409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1588,6 +1648,61 @@
                 }
               }
             }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quét QR bằng key qr_verify_token (đơn đã COMPLETED) -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}/verify-qr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}",
+                "verify-qr"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{shipper_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qr_verify_token\": \"{{qr_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Chứng minh API đọc được key qr_verify_token (không còn báo 400 Thiếu mã QR). Đơn đã COMPLETED nên trả 409."
           },
           "event": [
             {
@@ -2239,6 +2354,375 @@
           ]
         }
       ]
+    },
+    {
+      "name": "6. Danh sách / chi tiết đơn (GET)",
+      "item": [
+        {
+          "name": "Khách xem đơn của mình -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/customer/{{customer_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "customer",
+                "{{customer_id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customer_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test(\"data là mảng, có items và audit_logs\", function () { pm.expect(j.data).to.be.an(\"array\"); if (j.data.length) { pm.expect(j.data[0].items).to.be.an(\"array\"); pm.expect(j.data[0].audit_logs).to.be.an(\"array\"); } });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Khách xem đơn của người khác -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/customer/99999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "customer",
+                "99999"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customer_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chủ quán xem đơn của quán -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/restaurant/{{restaurant_id}}?status=PENDING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "restaurant",
+                "{{restaurant_id}}"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{restaurant_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chủ quán xem đơn quán khác -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/restaurant/{{other_restaurant_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "restaurant",
+                "{{other_restaurant_id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{restaurant_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "status không hợp lệ -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/restaurant/{{restaurant_id}}?status=ABC",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "restaurant",
+                "{{restaurant_id}}"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ABC"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{restaurant_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết 1 đơn (khách) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customer_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Có audit_logs (timeline)\", function () { pm.expect(pm.response.json().data.audit_logs).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chi tiết 1 đơn (chủ quán) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{restaurant_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Shipper được gán xem đơn -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{shipper_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Không có token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{order_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -2250,7 +2734,7 @@
     },
     {
       "key": "customer_username",
-      "value": "khach01",
+      "value": "khach_trung",
       "type": "string",
       "description": "Sửa theo seed"
     },
@@ -2261,7 +2745,7 @@
     },
     {
       "key": "restaurant_username",
-      "value": "quan01",
+      "value": "chuquan_highlands",
       "type": "string",
       "description": "Sửa theo seed"
     },
@@ -2272,7 +2756,7 @@
     },
     {
       "key": "shipper_username",
-      "value": "shipper01",
+      "value": "shipper_nam",
       "type": "string",
       "description": "Sửa theo seed"
     },
@@ -2305,7 +2789,7 @@
     },
     {
       "key": "shipper_id",
-      "value": "3",
+      "value": "8",
       "type": "string"
     },
     {
@@ -2337,6 +2821,12 @@
       "key": "qr_token",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "customer_id",
+      "value": "1",
+      "type": "string",
+      "description": "Tự lưu khi chạy Login - Khách hàng"
     }
   ]
 }

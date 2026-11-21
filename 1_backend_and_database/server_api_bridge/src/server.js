@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const { jwtSecret } = require('./middlewares/auth.jwt'); // [TV2]
 const { testConnection } = require('./config/db'); // [TV1]
+const { registerRealtimeHandlers } = require('./socket/realtime'); // [TV3] Đặt nhóm + GPS shipper
 
 jwtSecret(); // fail-fast: báo lỗi ngay khi khởi động nếu JWT_SECRET thiếu hoặc < 32 byte
 
@@ -17,6 +18,7 @@ const server = http.createServer(app);
 // ---------- Socket.io ----------
 const io = new Server(server, {
   cors: { origin: '*' },
+  maxHttpBufferSize: 1e5, // 100KB mỗi gói tin socket
 });
 
 // Xác thực JWT khi client (Android) kết nối socket, dùng ĐÚNG cấu hình token của TV2
@@ -52,6 +54,10 @@ io.on('connection', (socket) => {
   const rooms = [...socket.rooms].filter((r) => r !== socket.id);
   console.log(`[socket] +${role} #${id} vào room: ${rooms.join(', ')}`);
   socket.emit('JOINED', { rooms });
+
+  // Sự kiện Đặt nhóm (create_group_room, join_group_room, group_add_item, group_remove_item)
+  // và GPS Shipper (update_shipper_location)
+  registerRealtimeHandlers(io, socket);
 
   socket.on('disconnect', (reason) => {
     console.log(`[socket] -${role} #${id} rời (${reason})`);

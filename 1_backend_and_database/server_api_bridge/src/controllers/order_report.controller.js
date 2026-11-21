@@ -17,44 +17,72 @@ const { authenticateToken: authRequired, authorizeRoles: requireRole } = require
 // HÀM DÙNG CHUNG
 // =====================================================================
 
-// Lấy chi tiết 1 đơn (kèm danh sách món + tên khách) để trả về app và bắn socket
-async function getOrderDetail(orderId) {
-  const { rows } = await query(
+// Lấy chi tiết nhiều đơn cùng lúc (3 truy vấn cho cả danh sách, tránh N+1):
+// thông tin đơn + tên khách, danh sách món (order_details.*), lịch sử trạng thái (audit_logs.*)
+async function getOrdersDetail(ids) {
+  if (!ids.length) return [];
+  const orders = await query(
     `SELECT o.id, o.customer_id, o.restaurant_id, o.shipper_id, o.order_status,
             o.subtotal, o.shipping_fee, o.discount_amount, o.total_amount,
             o.qr_verify_token, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.created_at, u.full_name AS customer_name, u.phone AS customer_phone
        FROM orders o
        JOIN users u ON u.id = o.customer_id
-      WHERE o.id = $1`,
-    [orderId]
+      WHERE o.id = ANY($1::int[])`,
+    [ids]
   );
-  if (rows.length === 0) return null;
-
   const items = await query(
-    `SELECT od.item_id, m.name, od.quantity, od.unit_price, od.subtotal
+    `SELECT od.*, m.name
        FROM order_details od
        JOIN menu_items m ON m.id = od.item_id
-      WHERE od.order_id = $1
+      WHERE od.order_id = ANY($1::int[])
       ORDER BY od.id`,
-    [orderId]
+    [ids]
   );
-  return { ...rows[0], items: items.rows };
+  const logs = await query(
+    `SELECT al.* FROM audit_logs al
+      WHERE al.order_id = ANY($1::int[])
+      ORDER BY al.changed_at, al.id`,
+    [ids]
+  );
+
+  const byId = new Map(orders.rows.map((o) => [o.id, { ...o, items: [], audit_logs: [] }]));
+  for (const it of items.rows) byId.get(it.order_id)?.items.push(it);
+  for (const lg of logs.rows) byId.get(lg.order_id)?.audit_logs.push(lg);
+  return ids.map((id) => byId.get(id)).filter(Boolean); // giữ đúng thứ tự ids
+}
+
+async function getOrderDetail(orderId) {
+  const [order] = await getOrdersDetail([orderId]);
+  return order || null;
 }
 
 // Kiểm tra & chuẩn hóa mảng món từ app gửi lên. Trả về chuỗi lỗi hoặc null.
 function validateItems(items) {
   if (!Array.isArray(items) || items.length === 0) return 'Giỏ hàng đang trống';
-  if (items.length > 50) return 'Một đơn tối đa 50 món';
-  const seen = new Set();
+  if (items.length > 50) return 'Một đơn tối đa 50 dòng món';
+  // Cho phép trùng item_id: Đặt nhóm / cùng món khác Size-Topping / khác người đặt là các dòng riêng.
+  // sp_create_order của TV1 tự gộp theo item_id để khóa và trừ kho.
   for (const it of items) {
+    if (!it || typeof it !== 'object') return 'Dòng món không hợp lệ';
     if (!Number.isInteger(it.item_id) || it.item_id <= 0) return 'item_id không hợp lệ';
     if (!Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 99) {
       return 'Số lượng mỗi món phải từ 1 đến 99';
     }
-    if (it.kitchen_note != null && typeof it.kitchen_note !== 'string') return 'kitchen_note phải là chuỗi';
-    if (seen.has(it.item_id)) return 'Món bị trùng trong giỏ, hãy gộp số lượng';
-    seen.add(it.item_id);
+    if (it.extra_price != null && (typeof it.extra_price !== 'number' || !Number.isFinite(it.extra_price)
+        || it.extra_price < 0 || it.extra_price > 10000000)) {
+      return 'extra_price phải là số từ 0 trở lên';
+    }
+    if (it.kitchen_note != null && (typeof it.kitchen_note !== 'string' || it.kitchen_note.length > 500)) {
+      return 'kitchen_note phải là chuỗi tối đa 500 ký tự';
+    }
+    if (it.group_member_name != null && (typeof it.group_member_name !== 'string' || it.group_member_name.length > 100)) {
+      return 'group_member_name phải là chuỗi tối đa 100 ký tự';
+    }
+    if (it.selected_options != null && (typeof it.selected_options !== 'object'
+        || JSON.stringify(it.selected_options).length > 2000)) {
+      return 'selected_options không hợp lệ';
+    }
   }
   return null;
 }
@@ -110,8 +138,10 @@ router.post('/orders', authRequired, requireRole('CUSTOMER'), async (req, res) =
   const cleanItems = items.map((i) => ({
     item_id: i.item_id,
     quantity: i.quantity,
+    extra_price: typeof i.extra_price === 'number' && i.extra_price >= 0 ? i.extra_price : 0,
     selected_options: i.selected_options ?? null,
     kitchen_note: i.kitchen_note ?? null,
+    group_member_name: typeof i.group_member_name === 'string' ? i.group_member_name.trim() || null : null,
   }));
 
   try {
@@ -159,16 +189,18 @@ router.post('/orders', authRequired, requireRole('CUSTOMER'), async (req, res) =
 });
 
 // =====================================================================
-// PHẦN 3a: PATCH /api/orders/:id/status  (Chủ quán Nhận đơn / Nấu / Giao)
-// Body: { new_status, shipper_id? }   (shipper_id chỉ dùng khi chuyển sang DELIVERING)
-// Máy trạng thái: PENDING -> ACCEPTED -> COOKING -> DELIVERING
-// COMPLETED do API verify-qr xử lý, CANCELLED do API cancel xử lý.
+// PHẦN 3a: PATCH /api/orders/:id/status
+// - Chủ quán: PENDING -> ACCEPTED -> COOKING -> DELIVERING (kèm shipper_id khi giao)
+// - Khách / Chủ quán: new_status = "CANCELLED" -> chạy cùng luồng với POST /orders/:id/cancel
+// COMPLETED do API verify-qr xử lý.
+// Body: { new_status, shipper_id?, reason? }
 // =====================================================================
 const NEXT_STATUS = {
   PENDING: 'ACCEPTED',
   ACCEPTED: 'COOKING',
   COOKING: 'DELIVERING',
 };
+const ALL_STATUSES = ['PENDING', 'ACCEPTED', 'COOKING', 'DELIVERING', 'COMPLETED', 'CANCELLED'];
 
 // Chủ quán chỉ được thao tác với đơn thuộc quán của mình (kiểm tra bằng DB, không tin JWT)
 async function findOrderOfOwner(orderId, ownerId) {
@@ -182,92 +214,12 @@ async function findOrderOfOwner(orderId, ownerId) {
   return rows[0] || null;
 }
 
-router.patch('/orders/:id/status', authRequired, requireRole('RESTAURANT'), async (req, res) => {
-  const orderId = Number(req.params.id);
-  const { new_status, shipper_id } = req.body || {};
-
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
-  }
-  if (shipper_id != null && (!Number.isInteger(shipper_id) || shipper_id <= 0)) {
-    return res.status(400).json({ success: false, message: 'shipper_id không hợp lệ' });
-  }
-
-  try {
-    const order = await findOrderOfOwner(orderId, req.user.id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng của quán bạn' });
-    }
-
-    const oldStatus = order.order_status;
-    if (NEXT_STATUS[oldStatus] !== new_status) {
-      return res.status(409).json({
-        success: false,
-        message: `Không thể chuyển từ ${oldStatus} sang ${new_status}`,
-        allowed_next: NEXT_STATUS[oldStatus] || null,
-      });
-    }
-
-    // UPDATE có điều kiện order_status = oldStatus để chặn 2 thao tác bấm cùng lúc
-    // (Trigger 1 của TV2 tự ghi audit_logs, Trigger 3 chặn shipper quá tải)
-    const upd = await query(
-      `UPDATE orders
-          SET order_status = $1,
-              shipper_id = CASE WHEN $1 = 'DELIVERING' THEN COALESCE($4, shipper_id) ELSE shipper_id END
-        WHERE id = $2 AND order_status = $3
-        RETURNING id`,
-      [new_status, orderId, oldStatus, shipper_id ?? null]
-    );
-    if (upd.rowCount === 0) {
-      return res.status(409).json({ success: false, message: 'Đơn vừa được cập nhật bởi thao tác khác, hãy tải lại' });
-    }
-
-    // DB đã cập nhật xong -> bắn Socket báo máy Khách (và Shipper nếu có)
-    const io = req.app.get('io');
-    const payload = {
-      order_id: orderId,
-      old_status: oldStatus,
-      new_status,
-      changed_at: new Date().toISOString(),
-    };
-    io.to(`customer_${order.customer_id}`).emit('ORDER_STATUS_CHANGED', payload);
-    if (new_status === 'DELIVERING' && shipper_id) {
-      io.to(`shipper_${shipper_id}`).emit('ORDER_STATUS_CHANGED', payload);
-    }
-
-    return res.json({ success: true, message: 'Cập nhật trạng thái thành công', data: payload });
-  } catch (err) {
-    // Trigger 3 (shipper quá tải) dùng RAISE EXCEPTION -> P0001
-    if (err.code === 'P0001') {
-      return res.status(409).json({ success: false, message: err.message });
-    }
-    // shipper_id không tồn tại (vi phạm khóa ngoại)
-    if (err.code === '23503') {
-      return res.status(400).json({ success: false, message: 'Shipper không tồn tại' });
-    }
-    console.error('[PATCH /orders/:id/status]', err);
-    return res.status(500).json({ success: false, message: 'Lỗi server khi đổi trạng thái' });
-  }
-});
-
-// =====================================================================
-// PHẦN 3b: POST /api/orders/:id/cancel  (Hủy đơn, hoàn kho + hoàn voucher)
-// Body: { reason? }
-// - Khách: chỉ hủy đơn của chính mình
-// - Chủ quán: từ chối đơn thuộc quán mình
-// - Chỉ hủy được khi đơn đang PENDING hoặc ACCEPTED
-// =====================================================================
+// Luồng hủy đơn dùng chung cho POST /orders/:id/cancel và PATCH /orders/:id/status (CANCELLED)
 const CANCELLABLE = ['PENDING', 'ACCEPTED'];
 
-router.post('/orders/:id/cancel', authRequired, requireRole('CUSTOMER', 'RESTAURANT'), async (req, res) => {
-  const orderId = Number(req.params.id);
-  const reason = String((req.body && req.body.reason) || '').trim().slice(0, 255)
+async function cancelOrderFlow(req, res, orderId, rawReason) {
+  const reason = String(rawReason || '').trim().slice(0, 255)
     || (req.user.role === 'CUSTOMER' ? 'Khách hủy đơn' : 'Quán từ chối đơn');
-
-  if (!Number.isInteger(orderId) || orderId <= 0) {
-    return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
-  }
-
   try {
     // Tìm đơn và kiểm tra quyền sở hữu theo role
     let order;
@@ -293,7 +245,7 @@ router.post('/orders/:id/cancel', authRequired, requireRole('CUSTOMER', 'RESTAUR
     }
 
     // SP của TV1: hủy đơn + cộng trả tồn kho + hoàn 1 lượt voucher (trong 1 Transaction)
-    await cancelOrderTx(orderId, req.user.id, reason); // helper của TV1
+    await cancelOrderTx(orderId, req.user.id, reason);
 
     // DB đã commit -> bắn Socket cho cả Khách và Quán
     const io = req.app.get('io');
@@ -312,8 +264,189 @@ router.post('/orders/:id/cancel', authRequired, requireRole('CUSTOMER', 'RESTAUR
     if (err.code === 'P0001') {
       return res.status(400).json({ success: false, message: err.message });
     }
-    console.error('[POST /orders/:id/cancel]', err);
+    console.error('[cancel order]', err);
     return res.status(500).json({ success: false, message: 'Lỗi server khi hủy đơn' });
+  }
+}
+
+router.patch('/orders/:id/status', authRequired, requireRole('CUSTOMER', 'RESTAURANT'), async (req, res) => {
+  const orderId = Number(req.params.id);
+  const { new_status, shipper_id, reason } = req.body || {};
+
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
+  }
+  if (new_status === 'CANCELLED') {
+    return cancelOrderFlow(req, res, orderId, reason);
+  }
+  if (req.user.role !== 'RESTAURANT') {
+    return res.status(403).json({ success: false, message: 'Chỉ chủ quán được đổi trạng thái đơn' });
+  }
+  if (shipper_id != null && (!Number.isInteger(shipper_id) || shipper_id <= 0)) {
+    return res.status(400).json({ success: false, message: 'shipper_id không hợp lệ' });
+  }
+
+  try {
+    const order = await findOrderOfOwner(orderId, req.user.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng của quán bạn' });
+    }
+
+    const oldStatus = order.order_status;
+    if (NEXT_STATUS[oldStatus] !== new_status) {
+      return res.status(409).json({
+        success: false,
+        message: `Không thể chuyển từ ${oldStatus} sang ${new_status}`,
+        allowed_next: NEXT_STATUS[oldStatus] || null,
+      });
+    }
+
+    // UPDATE có điều kiện order_status = oldStatus để chặn 2 thao tác bấm cùng lúc.
+    // Ép kiểu ::varchar / ::int để PostgreSQL không báo 42P08 (suy luận kiểu tham số mâu thuẫn).
+    // (Trigger 1 của TV2 tự ghi audit_logs, Trigger 3 chặn shipper quá tải)
+    const upd = await query(
+      `UPDATE orders
+          SET order_status = $1::varchar,
+              shipper_id = CASE WHEN $1::varchar = 'DELIVERING' THEN COALESCE($4::int, shipper_id) ELSE shipper_id END
+        WHERE id = $2 AND order_status = $3
+        RETURNING id`,
+      [new_status, orderId, oldStatus, shipper_id ?? null]
+    );
+    if (upd.rowCount === 0) {
+      return res.status(409).json({ success: false, message: 'Đơn vừa được cập nhật bởi thao tác khác, hãy tải lại' });
+    }
+
+    // DB đã cập nhật xong -> bắn Socket báo máy Khách (và Shipper nếu có)
+    const io = req.app.get('io');
+    const payload = {
+      order_id: orderId,
+      old_status: oldStatus,
+      new_status,
+      changed_at: new Date().toISOString(),
+    };
+    io.to(`customer_${order.customer_id}`).emit('ORDER_STATUS_CHANGED', payload);
+    if (new_status === 'DELIVERING' && shipper_id) {
+      io.to(`shipper_${shipper_id}`).emit('ORDER_STATUS_CHANGED', payload);
+    }
+
+    return res.json({ success: true, message: 'Cập nhật trạng thái thành công', data: payload });
+  } catch (err) {
+    // Trigger 3 (shipper quá tải): P0001 hoặc 23514 (check_violation) -> 409
+    if (err.code === 'P0001' || err.code === '23514') {
+      return res.status(409).json({ success: false, message: err.message });
+    }
+    // shipper_id không tồn tại (vi phạm khóa ngoại)
+    if (err.code === '23503') {
+      return res.status(400).json({ success: false, message: 'Shipper không tồn tại' });
+    }
+    console.error('[PATCH /orders/:id/status]', err);
+    return res.status(500).json({ success: false, message: 'Lỗi server khi đổi trạng thái' });
+  }
+});
+
+// =====================================================================
+// PHẦN 3b: POST /api/orders/:id/cancel  (Hủy đơn, hoàn kho + hoàn voucher)
+// Body: { reason? }
+// - Khách: chỉ hủy đơn của chính mình; Chủ quán: từ chối đơn thuộc quán mình
+// - Chỉ hủy được khi đơn đang PENDING hoặc ACCEPTED
+// =====================================================================
+router.post('/orders/:id/cancel', authRequired, requireRole('CUSTOMER', 'RESTAURANT'), async (req, res) => {
+  const orderId = Number(req.params.id);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
+  }
+  return cancelOrderFlow(req, res, orderId, req.body && req.body.reason);
+});
+
+// =====================================================================
+// PHẦN 3c: 3 API GET đơn hàng cho App Mobile (kèm items + audit_logs)
+// ?limit (mặc định 50, tối đa 100) và ?offset dùng cho phân trang danh sách.
+// =====================================================================
+function pageParams(q) {
+  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 50, 1), 100);
+  const offset = Math.max(parseInt(q.offset, 10) || 0, 0);
+  return { limit, offset };
+}
+
+// GET /api/orders/customer/:customerId  -> CustomerOrdersFragment (khách chỉ xem đơn của mình)
+router.get('/orders/customer/:customerId', authRequired, requireRole('CUSTOMER'), async (req, res) => {
+  const customerId = Number(req.params.customerId);
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return res.status(400).json({ success: false, message: 'customerId không hợp lệ' });
+  }
+  if (customerId !== req.user.id) {
+    return res.status(403).json({ success: false, message: 'Bạn chỉ được xem đơn hàng của chính mình' });
+  }
+  try {
+    const { limit, offset } = pageParams(req.query);
+    const ids = await query(
+      'SELECT id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3',
+      [customerId, limit, offset]
+    );
+    const data = await getOrdersDetail(ids.rows.map((r) => r.id));
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[GET /orders/customer/:customerId]', err);
+    return res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách đơn' });
+  }
+});
+
+// GET /api/orders/restaurant/:restaurantId?status=PENDING  -> PartnerOrdersFragment
+router.get('/orders/restaurant/:restaurantId', authRequired, requireRole('RESTAURANT'), async (req, res) => {
+  const restaurantId = Number(req.params.restaurantId);
+  const { status } = req.query;
+  if (!Number.isInteger(restaurantId) || restaurantId <= 0) {
+    return res.status(400).json({ success: false, message: 'restaurantId không hợp lệ' });
+  }
+  if (status !== undefined && !ALL_STATUSES.includes(status)) {
+    return res.status(400).json({ success: false, message: `status phải là một trong: ${ALL_STATUSES.join(', ')}` });
+  }
+  try {
+    // Chống xem trộm: quán phải thuộc chủ quán đang đăng nhập (kiểm tra bằng DB)
+    const own = await query('SELECT 1 FROM restaurants WHERE id = $1 AND owner_id = $2', [restaurantId, req.user.id]);
+    if (own.rowCount === 0) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền xem đơn của quán này' });
+    }
+    const { limit, offset } = pageParams(req.query);
+    const ids = await query(
+      `SELECT id FROM orders
+        WHERE restaurant_id = $1 AND ($2::varchar IS NULL OR order_status = $2::varchar)
+        ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`,
+      [restaurantId, status ?? null, limit, offset]
+    );
+    const data = await getOrdersDetail(ids.rows.map((r) => r.id));
+    return res.json({ success: true, data });
+  } catch (err) {
+    console.error('[GET /orders/restaurant/:restaurantId]', err);
+    return res.status(500).json({ success: false, message: 'Lỗi server khi lấy danh sách đơn' });
+  }
+});
+
+// GET /api/orders/:id  -> chi tiết 1 đơn (khách của đơn, chủ quán của đơn, hoặc shipper được gán)
+router.get('/orders/:id', authRequired, async (req, res) => {
+  const orderId = Number(req.params.id);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
+  }
+  try {
+    const order = await getOrderDetail(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng' });
+    }
+    let allowed = false;
+    if (req.user.role === 'CUSTOMER') allowed = order.customer_id === req.user.id;
+    else if (req.user.role === 'SHIPPER') allowed = order.shipper_id === req.user.id;
+    else if (req.user.role === 'RESTAURANT') {
+      const own = await query('SELECT 1 FROM restaurants WHERE id = $1 AND owner_id = $2', [order.restaurant_id, req.user.id]);
+      allowed = own.rowCount > 0;
+    }
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền xem đơn này' });
+    }
+    return res.json({ success: true, data: order });
+  } catch (err) {
+    console.error('[GET /orders/:id]', err);
+    return res.status(500).json({ success: false, message: 'Lỗi server khi lấy chi tiết đơn' });
   }
 });
 
@@ -331,7 +464,7 @@ function sameToken(a, b) {
 
 router.post('/orders/:id/verify-qr', authRequired, requireRole('SHIPPER', 'RESTAURANT'), async (req, res) => {
   const orderId = Number(req.params.id);
-  const qrToken = req.body && req.body.qr_token;
+  const qrToken = req.body && (req.body.qr_token || req.body.qr_verify_token); // chấp nhận cả 2 tên key
 
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return res.status(400).json({ success: false, message: 'Mã đơn không hợp lệ' });
@@ -405,7 +538,7 @@ router.post('/orders/:id/verify-qr', authRequired, requireRole('SHIPPER', 'RESTA
 
 // =====================================================================
 // PHẦN 4b: GET /api/restaurants/:id/report?from=YYYY-MM-DD&to=YYYY-MM-DD
-// Trả doanh thu theo ngày + Top món bán chạy cho MPAndroidChart (chỉ tính đơn COMPLETED).
+// Gọi thẳng sp_get_restaurant_revenue_report của TV2 (SP tự điền các ngày không có đơn cho BarChart).
 // Mặc định: 7 ngày gần nhất.
 // =====================================================================
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -414,46 +547,15 @@ function toDateStr(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// Gom việc truy vấn báo cáo vào 1 hàm để dễ thay bằng sp_get_restaurant_revenue_report của TV2
-async function fetchRevenueReport(restaurantId, from, to) {
-  const daily = await query(
-    `SELECT to_char(o.created_at::date, 'YYYY-MM-DD') AS day,
-            COUNT(*)::int AS orders,
-            COALESCE(SUM(o.total_amount), 0) AS revenue
-       FROM orders o
-      WHERE o.restaurant_id = $1
-        AND o.order_status = 'COMPLETED'
-        AND o.created_at >= $2::date
-        AND o.created_at <  ($3::date + 1)
-      GROUP BY o.created_at::date
-      ORDER BY o.created_at::date`,
-    [restaurantId, from, to]
-  );
-
-  const top = await query(
-    `SELECT m.id AS item_id, m.name,
-            SUM(od.quantity)::int AS quantity_sold,
-            COALESCE(SUM(od.subtotal), 0) AS revenue
-       FROM order_details od
-       JOIN orders o     ON o.id = od.order_id
-       JOIN menu_items m ON m.id = od.item_id
-      WHERE o.restaurant_id = $1
-        AND o.order_status = 'COMPLETED'
-        AND o.created_at >= $2::date
-        AND o.created_at <  ($3::date + 1)
-      GROUP BY m.id, m.name
-      ORDER BY quantity_sold DESC, revenue DESC
-      LIMIT 5`,
-    [restaurantId, from, to]
-  );
-
-  const dailyRevenue = daily.rows.map((r) => ({ day: r.day, orders: r.orders, revenue: Number(r.revenue) }));
-  return {
-    daily_revenue: dailyRevenue,
-    top_items: top.rows.map((r) => ({ ...r, revenue: Number(r.revenue) })),
-    total_orders: dailyRevenue.reduce((s, d) => s + d.orders, 0),
-    total_revenue: dailyRevenue.reduce((s, d) => s + d.revenue, 0),
-  };
+// Kết quả SP nằm ở tham số INOUT cuối (jsonb). pg trả về dạng 1 dòng 1 cột; có thể là object hoặc chuỗi JSON.
+function readSpPayload(result) {
+  const row = result.rows && result.rows[0];
+  if (!row) return null;
+  let value = Object.values(row)[0];
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch (e) { /* giữ nguyên chuỗi */ }
+  }
+  return value;
 }
 
 router.get('/restaurants/:id/report', authRequired, requireRole('RESTAURANT'), async (req, res) => {
@@ -487,10 +589,16 @@ router.get('/restaurants/:id/report', authRequired, requireRole('RESTAURANT'), a
       return res.status(403).json({ success: false, message: 'Bạn không có quyền xem báo cáo của quán này' });
     }
 
-    const report = await fetchRevenueReport(restaurantId, from, to);
+    const result = await query(
+      'CALL sp_get_restaurant_revenue_report($1::int, $2::date, $3::date, NULL)',
+      [restaurantId, from, to]
+    );
+    const payload = readSpPayload(result);
+    // Giữ nguyên tên key của SP (date, order_count, item_name, sales...) để khớp hợp đồng với TV5
+    const body = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : { report: payload };
     return res.json({
       success: true,
-      data: { restaurant_id: restaurantId, restaurant_name: own.rows[0].name, from, to, ...report },
+      data: { restaurant_id: restaurantId, restaurant_name: own.rows[0].name, from, to, ...body },
     });
   } catch (err) {
     console.error('[GET /restaurants/:id/report]', err);
@@ -498,4 +606,4 @@ router.get('/restaurants/:id/report', authRequired, requireRole('RESTAURANT'), a
   }
 });
 
-module.exports = { router, authRequired, requireRole, getOrderDetail };
+module.exports = { router, authRequired, requireRole, getOrderDetail, getOrdersDetail };
