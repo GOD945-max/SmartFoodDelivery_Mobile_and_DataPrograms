@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" android:id="@+id/tv5_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/tv5_background" android:fillViewport="true" tools:context=".tv5.Tv5GalleryActivity">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
+        <TextView style="@style/TV5.Hero" android:text="@string/tv5_text_136" />
+        <TextView style="@style/TV5.Heading" android:text="@string/tv5_text_219" android:textColor="@color/tv5_orange" android:layout_marginTop="8dp" />
+        <TextView style="@style/TV5.Body" android:text="@string/tv5_text_220" android:layout_marginTop="8dp" />
+        <Space android:layout_width="1dp" android:layout_height="16dp" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_221" android:id="@+id/tv5_open_16" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_222" android:id="@+id/tv5_open_17" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_223" android:id="@+id/tv5_open_18" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_224" android:id="@+id/tv5_open_19" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_225" android:id="@+id/tv5_open_20" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_226" android:id="@+id/tv5_open_21" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_227" android:id="@+id/tv5_open_22" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_228" android:id="@+id/tv5_open_23" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_229" android:id="@+id/tv5_open_24" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_230" android:id="@+id/tv5_open_25" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_231" android:id="@+id/tv5_open_26" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_232" android:id="@+id/tv5_open_27" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_233" android:id="@+id/tv5_open_28" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_234" android:id="@+id/tv5_open_29" />
+        <com.google.android.material.button.MaterialButton style="@style/TV5.OutlineButton" android:text="@string/tv5_text_235" android:id="@+id/tv5_open_30" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

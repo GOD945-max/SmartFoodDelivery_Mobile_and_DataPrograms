@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Quyền mạng & kết nối HTTP nội bộ (10.0.2.2:3000 / IP LAN) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Quyền định vị GPS (FusedLocationProviderClient + osmdroid) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Quyền Camera quét mã QR giao hàng (TV5 QrScannerActivity) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Quyền thông báo & rung chuông đơn mới (Android 13+ & NotificationHelper) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SmartFoodDelivery"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".tv5.Tv5ScreenActivity" android:exported="false"
+            android:theme="@style/Theme.SmartFoodDelivery.TV5" />
+        <activity android:name=".tv5.Tv5GalleryActivity" android:exported="false"
+            android:theme="@style/Theme.SmartFoodDelivery.TV5" />
+    </application>
+
+</manifest>

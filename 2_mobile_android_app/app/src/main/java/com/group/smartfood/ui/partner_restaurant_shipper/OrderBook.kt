@@ -10,7 +10,7 @@ import java.util.Locale
 internal fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 internal fun dong(value: Long) = NumberFormat.getInstance(Locale.forLanguageTag("vi-VN")).format(value) + " đ"
 
-internal class OrderBook(val prefs: SharedPreferences) {
+internal class OrderBook(val prefs: SharedPreferences, private val live: Boolean = false) {
     fun value(key: String, fallback: String = "") = prefs.getString(key, fallback) ?: fallback
     fun save(key: String, value: String) = prefs.edit().putString(key, value).apply()
     fun orders() = JSONArray(value("orders", "[]")).objects()
@@ -24,9 +24,10 @@ internal class OrderBook(val prefs: SharedPreferences) {
     fun draftId(): String = value("draft").ifBlank {
         UUID.randomUUID().toString().also { save("draft", it) }
     }
-    fun addresses() = JSONArray(value("addresses", """[{"name":"Home","address":"12 Nguyễn Huệ, Quận 1, TP.HCM","lat":10.7756,"lng":106.6924,"source":"Điểm mẫu Quận 1"}]"""))
+    fun addresses() = JSONArray(value("addresses", if (live) "[]" else """[{"name":"Home","address":"12 Nguyễn Huệ, Quận 1, TP.HCM","lat":10.7756,"lng":106.6924,"source":"Điểm mẫu Quận 1"}]"""))
     fun address(): JSONObject {
         val entries = addresses()
+        if (entries.length() == 0) return JSONObject()
         return entries.getJSONObject(prefs.getInt("addressIndex", 0).coerceIn(0, entries.length()-1))
     }
     fun addAddress(entry: JSONObject) {

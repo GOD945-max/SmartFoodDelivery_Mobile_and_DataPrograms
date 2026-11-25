@@ -1,9 +1,10 @@
 package com.group.smartfood.data.api
 
 import okhttp3.Interceptor
-import okhttp3.MediaType
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import org.json.JSONObject
 import retrofit2.Call
@@ -14,6 +15,9 @@ interface ApiService {
     @POST("api/orders")
     fun create(@Body order: RequestBody, @Header("Idempotency-Key") key: String): Call<ResponseBody>
 
+    @GET("api/orders")
+    fun orders(): Call<ResponseBody>
+
     @GET("api/orders/{id}")
     fun details(@Path("id") id: String): Call<ResponseBody>
 
@@ -21,11 +25,13 @@ interface ApiService {
     fun cancel(@Path("id") id: String, @Body reason: RequestBody): Call<ResponseBody>
 
     @GET("api/orders/{id}/chat")
-    fun getChat(@Path("id") id: String): Call<ResponseBody>
+    fun getChat(@Path("id") id: String, @Query("after") after: String? = null,
+                @Query("before") before: String? = null, @Query("limit") limit: Int = 50): Call<ResponseBody>
 
     @POST("api/orders/{id}/chat")
     fun sendChat(
         @Path("id") id: String,
+        @Header("Idempotency-Key") key: String,
         @Body message: RequestBody
     ): Call<ResponseBody>
 }
@@ -44,4 +50,4 @@ object RetrofitClient {
         .build().create(ApiService::class.java)
 }
 
-fun JSONObject.requestBody() = RequestBody.create(MediaType.parse("application/json"), toString())
+fun JSONObject.requestBody() = toString().toRequestBody("application/json".toMediaType())

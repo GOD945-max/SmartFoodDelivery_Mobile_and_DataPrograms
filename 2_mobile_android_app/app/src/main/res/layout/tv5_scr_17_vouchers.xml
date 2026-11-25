@@ -1,0 +1,63 @@
+<?xml version='1.0' encoding='utf-8'?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools" android:id="@+id/tv5_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/tv5_background" tools:context=".tv5.Tv5ScreenActivity">
+    <LinearLayout android:layout_width="0dp" android:layout_height="64dp" android:orientation="horizontal" android:gravity="center_vertical" android:id="@+id/tv5_toolbar" android:paddingHorizontal="20dp" app:layout_constraintTop_toTopOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent">
+        <ImageButton android:id="@+id/tv5_back" android:layout_width="48dp" android:layout_height="48dp" android:background="@drawable/tv5_bg_back" android:src="@drawable/tv5_ic_back" android:padding="14dp" android:contentDescription="@string/tv5_text_025" />
+        <TextView style="@style/TV5.Heading" android:text="@string/tv5_text_043" android:layout_width="0dp" android:layout_weight="1" android:layout_marginStart="12dp" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:id="@+id/tv5_footer" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent" android:paddingHorizontal="20dp" android:paddingBottom="10dp">
+        <com.google.android.material.button.MaterialButton style="@style/TV5.Button" android:text="@string/tv5_text_044" />
+    </LinearLayout>
+    <androidx.core.widget.NestedScrollView android:id="@+id/tv5_scroll" android:layout_width="0dp" android:layout_height="0dp" android:fillViewport="true" android:clipToPadding="false" app:layout_constraintTop_toBottomOf="@id/tv5_toolbar" app:layout_constraintBottom_toTopOf="@id/tv5_footer" app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingTop="12dp" android:paddingBottom="20dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
+                    <EditText android:layout_width="match_parent" android:layout_height="48dp" android:background="@drawable/tv5_bg_card" android:padding="14dp" android:textSize="13sp" android:textColor="@color/tv5_ink" android:textColorHint="@color/tv5_muted" android:hint="@string/tv5_text_039" android:focusable="false" android:cursorVisible="false" android:inputType="textMultiLine" android:gravity="center_vertical" />
+                </LinearLayout>
+                <com.google.android.material.button.MaterialButton style="@style/TV5.Button" android:text="@string/tv5_text_040" android:layout_width="80dp" android:layout_marginStart="10dp" />
+            </LinearLayout>
+            <Space android:layout_width="1dp" android:layout_height="12dp" />
+            <TextView style="@style/TV5.Title" android:text="@string/tv5_text_041" android:layout_marginTop="8dp" android:layout_marginBottom="12dp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_pale" android:padding="16dp" android:layout_marginBottom="12dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                    <ImageView android:layout_width="32dp" android:layout_height="32dp" android:src="@drawable/tv5_ic_ticket" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
+                        <TextView style="@style/TV5.Accent" android:text="@string/tv5_text_028" />
+                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_029" android:layout_marginTop="8dp" />
+                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_030" android:layout_marginTop="8dp" />
+                    </LinearLayout>
+                    <RadioButton android:layout_width="36dp" android:layout_height="40dp" android:buttonTint="@color/tv5_orange" android:checked="true" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />
+                </LinearLayout>
+                <Space android:layout_width="1dp" android:layout_height="12dp" />
+                <TextView style="@style/TV5.Small" android:text="@string/tv5_text_031" />
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                    <ImageView android:layout_width="32dp" android:layout_height="32dp" android:src="@drawable/tv5_ic_ticket" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
+                        <TextView style="@style/TV5.Accent" android:text="@string/tv5_text_032" />
+                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_033" android:layout_marginTop="8dp" />
+                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_034" android:layout_marginTop="8dp" />
+                    </LinearLayout>
+                    <RadioButton android:layout_width="36dp" android:layout_height="40dp" android:buttonTint="@color/tv5_orange" android:checked="false" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />
+                </LinearLayout>
+                <Space android:layout_width="1dp" android:layout_height="12dp" />
+                <TextView style="@style/TV5.Small" android:text="@string/tv5_text_035" />
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+                    <ImageView android:layout_width="32dp" android:layout_height="32dp" android:src="@drawable/tv5_ic_ticket" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
+                        <TextView style="@style/TV5.Accent" android:text="@string/tv5_text_036" />
+                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_037" android:layout_marginTop="8dp" />
+                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_038" android:layout_marginTop="8dp" />
+                    </LinearLayout>
+                    <RadioButton android:layout_width="36dp" android:layout_height="40dp" android:buttonTint="@color/tv5_orange" android:checked="false" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />
+                </LinearLayout>
+                <Space android:layout_width="1dp" android:layout_height="12dp" />
+                <TextView style="@style/TV5.Small" android:text="@string/tv5_text_035" />
+            </LinearLayout>
+            <Space android:layout_width="1dp" android:layout_height="12dp" />
+            <TextView style="@style/TV5.Small" android:text="@string/tv5_text_042" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.constraintlayout.widget.ConstraintLayout>

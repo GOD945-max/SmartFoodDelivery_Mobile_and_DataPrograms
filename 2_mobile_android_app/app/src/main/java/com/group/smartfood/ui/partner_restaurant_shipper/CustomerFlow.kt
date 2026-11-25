@@ -32,7 +32,7 @@ import java.util.concurrent.Executors
 internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen: Int) {
     private val intent = a.intent
     private val live = intent.hasExtra("api_base_url")
-    private val book = OrderBook(a.getSharedPreferences(if (live) "tv5_user_" + intent.getIntExtra("customer_id",0) else "tv5_demo",0))
+    private val book = OrderBook(a.getSharedPreferences(if (live) "tv5_user_" + intent.getIntExtra("customer_id",0) else "tv5_demo",0), live)
     private val api by lazy { RetrofitClient.create(intent.getStringExtra("api_base_url").orEmpty(), intent.getStringExtra("jwt").orEmpty()) }
     private val cart get() = intent.getStringExtra("cart_json")?.let(::JSONObject) ?: book.sampleCart()
     private val draft get() = book.quote(cart, book.value("voucher", if(live) "" else "SMART20"))
@@ -135,6 +135,9 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
                 16->checkout()
                 17->vouchers()
                 18->payment()
+                21 -> if (live && id.isNotBlank()) chat(id, null)
+                      else if (order != null) chat(id, order)
+                      else { card("Chưa có đơn hàng"); nav() }
                 24->orders()
                 26->profile()
                 27->loyalty()
@@ -147,7 +150,6 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
                     else when(screen) {
                         19->{card("Đã tạo đơn " + o.getString("id"),status(o));summary(o);button("Theo dõi đơn",footer){go(20)};button("Chi tiết đơn"){go(22)}}
                         20->tracking(o)
-                        21->chat(o)
                         22->details(o)
                         23->review(o)
                         25->{card("Biên nhận",receiptText(o));button("Lưu biên nhận",footer){receipt.launch("SmartFood-"+id+".txt")}}
@@ -189,7 +191,7 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
         }
         fun slot(name:String)=body.findViewWithTag<TextView>(name)
         slot("customer").text=book.value("profile","Khoa")
-        slot("address").text=book.address().getString("address")
+        slot("address").text=book.address().optString("address", "Chọn địa chỉ giao hàng")
         slot("change").setOnClickListener{go(28)}
         val schedule=book.value("schedule","Giao ngay")
         slot("now").text=if(schedule=="Giao ngay") "Giao ngay ✓" else "Giao ngay"
@@ -295,7 +297,14 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
         book.orders().find { it.optString("request")==key }?.let { placed(it);return }
         val method=book.value("method","COD")
         val destination=q.getJSONObject("destination")
-        if(live && (!destination.has("lat") || !destination.has("lng"))){message("Chọn địa chỉ có tọa độ GPS");return}
+        if (live && (!destination.optBoolean("confirmedGps") ||
+                    destination.optString("address").isBlank() ||
+                    destination.optDouble("lat") !in -90.0..90.0 ||
+                    destination.optDouble("lng") !in -180.0..180.0)) {
+            message("Anh cần chọn vị trí GPS và xác nhận địa chỉ giao hàng.")
+            go(28)
+            return
+        }
         val payload=JSONObject(q.toString()).put("payment_method",method)
             .put("customer_id",intent.getIntExtra("customer_id",0)).put("delivery_address",destination.getString("address"))
             .put("delivery_lat",destination.opt("lat")).put("delivery_lng",destination.opt("lng"))
@@ -427,8 +436,7 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
         button("Biên nhận",footer){go(25)};button("Danh sách đơn"){go(24)}
     }
 
-    private fun chat(o: JSONObject) {
-        val orderId = o.getString("id")
+    private fun chat(orderId: String, localOrder: JSONObject?) {
         val draftKey = "draftChat$orderId"
         val roleKey = "chatDemoRole$orderId"
         val demoRole = book.value(roleKey, "CUSTOMER")
@@ -463,13 +471,13 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
         }
         body.addView(thread)
 
-        fun bubble(text: String, mine: Boolean, time: Long) {
+        fun bubble(text: String, mine: Boolean, time: Long, index: Int = thread.childCount) {
             val side = if (mine) Gravity.END else Gravity.START
             val group = LinearLayout(a).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = side
             }
-            thread.addView(group, LinearLayout.LayoutParams(-1, -2).apply {
+            thread.addView(group, index, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = dp(5)
                 bottomMargin = dp(3)
                 if (mine) marginStart = dp(40) else marginEnd = dp(40)
@@ -556,13 +564,17 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
             send.alpha = if (send.isEnabled) 1f else 0.45f
         }
 
+        val pendingKey = "${currentDraftKey}_pending"
         input.doAfterTextChanged {
+            val pending = book.value(pendingKey)
+            if (pending.isNotBlank() && JSONObject(pending).optString("text") != it.toString().trim()) book.save(pendingKey, "")
             book.save(currentDraftKey, it.toString())
             updateSendButton()
         }
         updateSendButton()
 
         if (!live) {
+            val o = requireNotNull(localOrder)
             val messages = o.optJSONArray("chat") ?: JSONArray()
 
             for (i in 0 until messages.length()) {
@@ -636,13 +648,64 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
             })
         }
 
-        var previousMessages: String? = null
+        val shown = mutableSetOf<String>()
+        var lastId: String? = null
+        var firstId: String? = null
+        var hasOlder = false
+        var loadingOlder = false
+        var legacy = emptyList<String>()
+
+        fun draw(item: JSONObject, prepend: Boolean = false) {
+            bubble(item.optString("text"), item.optBoolean("mine"), item.optLong("time"),
+                if (prepend) 0 else thread.childCount)
+        }
+        fun messageId(item: JSONObject) = if (item.isNull("id")) "" else item.optString("id")
+        fun loadOlder() {
+            if (!hasOlder || loadingOlder || firstId == null) return
+            loadingOlder = true
+            request(api.getChat(orderId, before = firstId)) { data, error ->
+                loadingOlder = false
+                val page = data?.optJSONArray("messages")
+                if (page == null) message(error ?: "Chưa tải được tin cũ")
+                else {
+                    val height = thread.height
+                    val y = scroll.scrollY
+                    for (i in page.length() - 1 downTo 0) {
+                        val row = page.optJSONObject(i) ?: continue
+                        val key = messageId(row)
+                        if (key.isNotEmpty() && shown.add(key)) {
+                            draw(row, true)
+                            firstId = key
+                        }
+                    }
+                    hasOlder = data?.optBoolean("has_more_before") == true && page.length() > 0
+                    if (!hasOlder) body.findViewWithTag<View>("older")?.visibility = View.GONE
+                    thread.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                        override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int,
+                            oldL: Int, oldT: Int, oldR: Int, oldB: Int) {
+                            v.removeOnLayoutChangeListener(this)
+                            scroll.scrollTo(0, y + v.height - height)
+                        }
+                    })
+                }
+            }
+        }
+        val older = MaterialButton(a).apply {
+            tag = "older"
+            text = "Xem tin cũ hơn"
+            visibility = View.GONE
+            setOnClickListener { loadOlder() }
+        }
+        body.addView(older, body.indexOfChild(thread))
+        scroll.setOnScrollChangeListener(NestedScrollView.OnScrollChangeListener { _, _, y, _, old ->
+            if (y == 0 && old > y) loadOlder()
+        })
 
         val refresh = object : Runnable {
             override fun run() {
                 if (!screenOpen()) return
 
-                request(api.getChat(orderId)) { data, error ->
+                request(api.getChat(orderId, after = lastId)) { data, error ->
                     val messages = data?.optJSONArray("messages")
 
                     if (data == null || messages == null) {
@@ -655,23 +718,33 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
                             else -> status("Chưa rõ trạng thái · Đơn $orderId")
                         }
 
-                        val snapshot = messages.toString()
-                        if (snapshot != previousMessages) {
-                            val nearBottom = previousMessages == null ||
-                                    body.height - scroll.height - scroll.scrollY < dp(80)
-
-                            thread.removeAllViews()
-                            for (i in 0 until messages.length()) {
-                                val item = messages.optJSONObject(i) ?: continue
-                                bubble(
-                                    item.optString("text"),
-                                    item.optBoolean("mine"),
-                                    item.optLong("time")
-                                )
+                        val rows = (0 until messages.length()).mapNotNull(messages::optJSONObject)
+                        val nearBottom = thread.childCount == 0 ||
+                            body.height - scroll.height - scroll.scrollY < dp(80)
+                        var changed = false
+                        if (rows.all { messageId(it).isNotEmpty() }) {
+                            if (firstId == null) {
+                                firstId = rows.firstOrNull()?.let(::messageId)
+                                hasOlder = data.optBoolean("has_more_before")
                             }
-                            previousMessages = snapshot
-                            if (nearBottom) scrollToLatest()
+                            for (row in rows) {
+                                val key = messageId(row)
+                                if (shown.add(key)) {
+                                    draw(row)
+                                    lastId = key
+                                    changed = true
+                                }
+                            }
+                        } else {
+                            val snapshot = rows.map { it.toString() }
+                            val append = snapshot.take(legacy.size) == legacy
+                            if (!append) thread.removeAllViews()
+                            rows.drop(if (append) legacy.size else 0).forEach { draw(it) }
+                            changed = snapshot != legacy
+                            legacy = snapshot
                         }
+                        older.visibility = if (hasOlder) View.VISIBLE else View.GONE
+                        if (changed && nearBottom) scrollToLatest()
                     }
                     handler.postDelayed(this, 2500L)
                 }
@@ -688,8 +761,19 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
             input.isEnabled = false
             updateSendButton()
 
-            val payload = JSONObject().put("text", text).requestBody()
-            request(api.sendChat(orderId, payload)) { data, error ->
+            val pending = book.value(pendingKey).takeIf { it.isNotBlank() }?.let(::JSONObject)
+            val key = pending?.takeIf { it.optString("text") == text }?.optString("key")
+                ?: UUID.randomUUID().toString()
+            if (!book.prefs.edit().putString(pendingKey, JSONObject().put("key", key)
+                    .put("text", text).toString()).commit()) {
+                sending = false
+                input.isEnabled = true
+                updateSendButton()
+                message("Chưa lưu được tin chờ gửi")
+                return@setOnClickListener
+            }
+            val payload = JSONObject().put("text", text).put("client_message_id", key).requestBody()
+            request(api.sendChat(orderId, key, payload)) { data, error ->
                 sending = false
                 input.isEnabled = true
 
@@ -720,11 +804,30 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
             }
         }
     }
-    private fun orders(){
+    private fun orders(cached: Boolean = false){
         val filter=book.value("orderFilter","Tất cả")
         button("Lọc đơn • "+filter){
             val names=arrayOf("Tất cả","Đang xử lý","Đã giao","Đã hủy")
             AlertDialog.Builder(a).setItems(names){_,i->book.save("orderFilter",names[i]);render()}.show()
+        }
+        if (live && !cached) {
+            val anchor = label("Đang đồng bộ đơn hàng…")
+            runApi(api.orders()) { reply ->
+                if (active && anchor.isAttachedToWindow) {
+                    val rows = reply.getJSONArray("orders").objects()
+                    val merged = rows.map { row ->
+                        val id = row.getString("id")
+                        val existing = book.order(id)
+                        JSONObject(existing?.toString() ?: "{}").also { order ->
+                            row.keys().forEach { k -> order.put(k, row.get(k)) }
+                            require(order.has("items") && order.has("total") && order.has("status"))
+                        }
+                    }
+                    book.save("orders", JSONArray(merged).toString())
+                    body.removeAllViews(); footer.removeAllViews(); orders(true)
+                }
+            }
+            anchor.text = "Đơn đã lưu trên máy · đang thử cập nhật từ máy chủ"
         }
         val list=book.orders().filter{when(filter){
             "Đã giao"->it.optString("status")=="COMPLETED"
@@ -775,13 +878,14 @@ internal class CustomerFlow(private val a: Tv5ScreenActivity, private val screen
         handler.removeCallbacks(timeout);listener?.let{runCatching{locations.removeUpdates(it)}};listener=null
     }
     private fun fallback(reason:String){
+        if (live) { message("$reason. Hãy thử lấy lại vị trí GPS."); return }
         AlertDialog.Builder(a).setTitle(reason).setMessage("Dùng điểm mẫu Quận 1 (10.7756, 106.6924) để thử luồng giao hàng?")
             .setNegativeButton("Giữ địa chỉ",null).setPositiveButton("Dùng điểm mẫu"){_,_->savePoint(10.7756,106.6924,"Điểm mẫu Quận 1")}.show()
     }
     private fun savePoint(lat:Double,lng:Double,source:String){
         val coords=String.format(java.util.Locale.US,"%.5f, %.5f",lat,lng)
         prompt("Địa chỉ giao tại "+coords,coords){s->
-            book.addAddress(JSONObject().put("name",source).put("address",s).put("lat",lat).put("lng",lng).put("source",source));render()
+            book.addAddress(JSONObject().put("name",source).put("address",s).put("lat",lat).put("lng",lng).put("confirmedGps",live).put("source",source));render()
         }
     }
     @android.annotation.SuppressLint("MissingPermission")
