@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
+    android:padding="8dp" android:orientation="horizontal">
+    <EditText android:id="@+id/tv5_message_input" android:layout_width="0dp" android:layout_weight="1"
+        android:layout_height="wrap_content" android:minHeight="48dp" android:maxLines="4"
+        android:inputType="textMultiLine" android:hint="@string/tv5_text_093" />
+    <ImageButton android:id="@+id/tv5_send" android:layout_width="48dp" android:layout_height="48dp"
+        android:background="@drawable/tv5_bg_orange" android:src="@drawable/tv5_ic_send"
+        android:contentDescription="@string/tv5_send_message" />
+</LinearLayout>

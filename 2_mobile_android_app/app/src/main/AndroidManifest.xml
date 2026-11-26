@@ -40,6 +40,10 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".tv5.Tv5ScreenActivity" android:exported="false"
+            android:theme="@style/Theme.SmartFoodDelivery.TV5" />
+        <activity android:name=".tv5.Tv5GalleryActivity" android:exported="false"
+            android:theme="@style/Theme.SmartFoodDelivery.TV5" />
     </application>
 
 </manifest>

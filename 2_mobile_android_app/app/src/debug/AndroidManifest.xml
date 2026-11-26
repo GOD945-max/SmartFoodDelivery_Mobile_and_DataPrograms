@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <activity android:name=".MainActivity" android:exported="false" tools:replace="android:exported">
+            <intent-filter tools:node="removeAll" />
+        </activity>
+        <activity-alias android:name=".tv5.Tv5DemoLauncher"
+            android:targetActivity=".tv5.Tv5GalleryActivity"
+            android:label="@string/tv5_app_name" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+</manifest>
