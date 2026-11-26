@@ -54,7 +54,7 @@ class UiRegressionTest {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val prefs = context.getSharedPreferences("tv5_demo", 0)
         val book = OrderBook(prefs)
-        val order = book.quote(book.sampleCart(), "SMART20")
+        val order = book.quote(book.sampleCart(), "FOODFLOW20")
             .put("id", "test-order").put("status", "COMPLETED").put("method", "COD")
             .put("payment", "COD").put("token", "unit-test-token")
         book.put(order)
@@ -113,10 +113,25 @@ class UiRegressionTest {
         }
     }
 
+    @Test fun serverOrderMapsDatabaseFieldsOnANewDevice() {
+        val row = org.json.JSONObject("""{"id":42,"order_status":"ACCEPTED","subtotal":"138000.00",
+            "shipping_fee":"15000.00","discount_amount":"27600.00","total_amount":"125400.00",
+            "delivery_address":"UMT","delivery_lat":10.8,"delivery_lng":106.7,
+            "qr_verify_token":"demo-token","items":[]}""")
+        val order = applyServerOrder(row,org.json.JSONObject())
+        assertEquals("42", order.getString("id"))
+        assertEquals("ACCEPTED", order.getString("status"))
+        assertEquals(125400L, order.getLong("total"))
+        assertEquals(15000L, order.getLong("delivery_fee"))
+        assertEquals(27600L, order.getLong("discount"))
+        assertEquals("UMT", order.getJSONObject("destination").getString("address"))
+        assertEquals("demo-token", order.getString("token"))
+    }
+
     @Test fun voucherTotalsUseIntegerDong() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val book = OrderBook(context.getSharedPreferences("test-quote", 0))
-        val quote = book.quote(book.sampleCart(), "SMART20")
+        val quote = book.quote(book.sampleCart(), "FOODFLOW20")
         assertEquals(138000L, quote.getLong("subtotal"))
         assertEquals(27600L, quote.getLong("discount"))
         assertEquals(125400L, quote.getLong("total"))

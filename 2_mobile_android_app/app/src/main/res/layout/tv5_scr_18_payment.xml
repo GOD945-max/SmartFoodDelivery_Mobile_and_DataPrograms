@@ -26,26 +26,6 @@
             </LinearLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <ImageView android:layout_width="28dp" android:layout_height="28dp" android:src="@drawable/tv5_ic_wallet" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_047" android:tag="MOMO" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_048" android:layout_marginTop="7dp" />
-                    </LinearLayout>
-                    <RadioButton android:layout_width="36dp" android:layout_height="40dp" android:buttonTint="@color/tv5_orange" android:checked="false" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />
-                </LinearLayout>
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <ImageView android:layout_width="28dp" android:layout_height="28dp" android:src="@drawable/tv5_ic_wallet" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_049" android:tag="ZALO" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_050" android:layout_marginTop="7dp" />
-                    </LinearLayout>
-                    <RadioButton android:layout_width="36dp" android:layout_height="40dp" android:buttonTint="@color/tv5_orange" android:checked="false" android:clickable="false" android:focusable="false" android:importantForAccessibility="no" />
-                </LinearLayout>
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
                     <ImageView android:layout_width="28dp" android:layout_height="28dp" android:src="@drawable/tv5_ic_qr" android:importantForAccessibility="no" android:layout_marginEnd="16dp" />
                     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
                         <TextView style="@style/TV5.Title" android:text="@string/tv5_text_051" android:tag="VIETQR" />

@@ -9,45 +9,8 @@
     </LinearLayout>
     <androidx.core.widget.NestedScrollView android:id="@+id/tv5_scroll" android:layout_width="0dp" android:layout_height="0dp" android:fillViewport="true" android:clipToPadding="false" app:layout_constraintTop_toBottomOf="@id/tv5_toolbar" app:layout_constraintBottom_toTopOf="@id/tv5_footer" app:layout_constraintStart_toStartOf="parent" app:layout_constraintEnd_toEndOf="parent">
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="20dp" android:paddingTop="12dp" android:paddingBottom="20dp">
-            <ImageView android:layout_width="match_parent" android:layout_height="240dp" android:src="@drawable/tv5_ic_map" android:importantForAccessibility="no" android:scaleType="fitXY" android:contentDescription="@string/tv5_text_073" />
-            <Space android:layout_width="1dp" android:layout_height="12dp" />
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
-                <TextView style="@style/TV5.Accent" android:text="@string/tv5_text_074" />
-                <TextView style="@style/TV5.Heading" android:text="@string/tv5_text_075" android:layout_marginTop="10dp" />
-                <TextView style="@style/TV5.Small" android:text="@string/tv5_text_076" android:layout_marginTop="8dp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/tv5_ic_done" android:importantForAccessibility="no" android:layout_gravity="center_horizontal" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_069" android:gravity="center" android:layout_marginTop="10dp" android:textSize="10sp" />
-                    </LinearLayout>
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/tv5_ic_done" android:importantForAccessibility="no" android:layout_gravity="center_horizontal" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_070" android:gravity="center" android:layout_marginTop="10dp" android:textSize="10sp" />
-                    </LinearLayout>
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/tv5_ic_done" android:importantForAccessibility="no" android:layout_gravity="center_horizontal" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_071" android:gravity="center" android:layout_marginTop="10dp" android:textSize="10sp" />
-                    </LinearLayout>
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/tv5_ic_pending" android:importantForAccessibility="no" android:layout_gravity="center_horizontal" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_072" android:gravity="center" android:layout_marginTop="10dp" android:textSize="10sp" />
-                    </LinearLayout>
-                </LinearLayout>
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/tv5_bg_card" android:padding="16dp" android:layout_marginBottom="12dp">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
-                    <ImageView android:layout_width="36dp" android:layout_height="36dp" android:src="@drawable/tv5_ic_person" android:importantForAccessibility="no" android:layout_marginEnd="14dp" />
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:layout_weight="1">
-                        <TextView style="@style/TV5.Title" android:text="@string/tv5_text_077" />
-                        <TextView style="@style/TV5.Small" android:text="@string/tv5_text_078" android:layout_marginTop="7dp" />
-                    </LinearLayout>
-                    <ImageView android:layout_width="26dp" android:layout_height="26dp" android:src="@drawable/tv5_ic_phone" android:importantForAccessibility="no" />
-                </LinearLayout>
-                <Space android:layout_width="1dp" android:layout_height="12dp" />
-                <TextView style="@style/TV5.Body" android:text="@string/tv5_text_079" />
-            </LinearLayout>
+            <LinearLayout android:id="@+id/tv5_dynamic_content" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

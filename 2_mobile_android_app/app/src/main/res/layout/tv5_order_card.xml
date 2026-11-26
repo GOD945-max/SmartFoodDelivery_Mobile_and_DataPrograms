@@ -1,0 +1,6 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+    android:padding="12dp" android:layout_marginBottom="10dp" android:background="@drawable/tv5_bg_card">
+    <TextView android:id="@+id/tv5_card_title" style="@style/TV5.Title"/>
+    <TextView android:id="@+id/tv5_card_detail" style="@style/TV5.Small" android:layout_marginTop="6dp"/>
+</LinearLayout>

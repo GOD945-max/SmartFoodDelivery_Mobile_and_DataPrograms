@@ -56,7 +56,7 @@ class ScreenNavigationTest(
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val book = OrderBook(context.getSharedPreferences("tv5_demo", 0))
         val id = "navigation-" + java.util.UUID.randomUUID()
-        book.put(book.quote(book.sampleCart(), "SMART20").put("id", id))
+        book.put(book.quote(book.sampleCart(), "FOODFLOW20").put("id", id))
     }
 
     private fun checkTitle() {

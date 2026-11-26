@@ -1,0 +1,6 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+    <EditText android:id="@+id/tv5_review_text" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:minHeight="80dp" android:inputType="textMultiLine" android:maxLength="500" android:hint="@string/tv5_text_114" />
+    <TextView android:id="@+id/tv5_review_counter" style="@style/TV5.Small" android:gravity="end"/>
+</LinearLayout>
